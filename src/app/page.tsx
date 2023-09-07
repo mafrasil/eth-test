@@ -15,13 +15,20 @@ const client = createPublicClient({
   transport: http()
 })
 
-const getLatestPrice = async (): Promise<(number | string)[]> => {
+const getPriceFromBand = async (): Promise<number> => {
+  const api = 'https://laozi1.bandchain.org/api/oracle/v1/request_prices?symbols=ETH';
+  const result = await fetch(api);
+  const data = await result.json();
+  return data.price_results[0].px / data.price_results[0].multiplier;
+}
+
+const getLatestPrice = async (): Promise<number> => {
   const result = await client.readContract({
     address: '0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419' as `0x${string}`,
     abi: AggregatorProxyInterface.abi,
     functionName: 'latestRoundData'
-  })
-  return result as (number | string)[];
+  }) as any;
+  return Number(result[1]) / 1e8;
 }
 
 const useCurrentTime = () => {
@@ -40,9 +47,9 @@ const useCurrentTime = () => {
   return time;
 };
 
-const displayValue = (name: string, value: any) => {
+const DisplayValue: React.FC<{ name: string; value: any }> = ({ name, value }) => {
   return (
-    <div className="bg-black/50 p-3 rounded-md flex flex-col w-64">
+    <div className="bg-black/50 text-white p-3 rounded-md flex flex-col w-full lg:w-64">
       <span className="text-white/50">{name}</span>
       <span>{value}</span>
     </div>
@@ -52,23 +59,61 @@ const displayValue = (name: string, value: any) => {
 export default function Home() {
   const time = useCurrentTime();
   const [price, setPrice] = useState<number|null>(null);
+  const [prevPrice, setPrevPrice] = useState<number|null>(null);
+  const [priceColor, setPriceColor] = useState<string>('');
+  const [oracle, setOracle] = useState<string>("Chainlink");
 
+  const oracleMethods: { [key: string]: () => Promise<number> } = {
+    "Chainlink": getLatestPrice,
+    "Band Protocol": getPriceFromBand,
+  };
+  
   useEffect(() => {
     const fetchPrice = async () => {
-      const latestPriceData = await getLatestPrice();
-      const answer = Number(latestPriceData[1]) / 10 ** 8;
+      const method = oracleMethods[oracle];
+      const latestPriceData = await method();
+      const answer = Number(latestPriceData);
+      setPrevPrice(price);
       setPrice(parseFloat(answer.toFixed(2)));
     };
+  
     fetchPrice();
-  }, []);
+  
+    const priceInterval = setInterval(fetchPrice, 5000);
+  
+    return () => {
+      clearInterval(priceInterval);
+    };
+  }, [price, oracle]);
+
+  useEffect(() => {
+    if (price && prevPrice) {
+      if (price > prevPrice) {
+        setPriceColor('text-green-500');
+      } else if (price < prevPrice) {
+        setPriceColor('text-red-500');
+      } else {
+        setPriceColor('');
+      }
+    }
+  }, [price, prevPrice]);
 
   return (
     <main className="h-screen w-screen flex flex-col bg-blue-900 justify-center items-center">
-      <div className="grid grid-cols-2 gap-3">
-      {displayValue('Oracle', 'Chainlink')}
-      {displayValue('Price Feed', 'ETH/USD')}
-      {displayValue('USD', `$${price}`)}
-      {displayValue('Time', time?.toLocaleString())}
+      <nav>
+        <ul className="flex gap-x-2 py-2">
+          {oracleMethods && Object.keys(oracleMethods).map((o) => (
+            <li className={`uppercase cursor-pointer py-2 font-bold ${oracle === o ? 'underline' : ''}`} key={o} onClick={() => setOracle(o)}>
+              {o}
+            </li>
+          ))}
+        </ul>
+      </nav>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        <DisplayValue name='Oracle' value={oracle} />
+        <DisplayValue name='Price Feed' value='ETH/USD' />
+        <DisplayValue name='USD' value={<span className={`${priceColor}`}>${price?.toFixed(2) || "-"}</span>} />
+        <DisplayValue name='Time' value={time?.toLocaleString() || "-"} />
       </div>
     </main>
   )

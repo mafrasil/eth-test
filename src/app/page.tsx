@@ -27,7 +27,7 @@ const getLatestPrice = async (): Promise<number> => {
     address: '0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419' as `0x${string}`,
     abi: AggregatorProxyInterface.abi,
     functionName: 'latestRoundData'
-  }) as any;
+  }) as number[];
   return Number(result[1]) / 1e8;
 }
 
